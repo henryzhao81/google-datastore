@@ -35,22 +35,26 @@ public class MainService {
 			return "OK";
 		});
 		
-		get("/" + String.join("/", "v1", "query", "hourly", ":start", ":paras"), (request, response) -> {
+		get("/" + String.join("/", "v1", "query", "hourly", ":start", ":end", ":paras"), (request, response) -> {
 			String start = request.params(":start");
+			String end = request.params(":end");
 			String paras = request.params(":paras");
 			String[] words = paras.split("=");
-			System.out.println("hourly query start : " + start + " paras : " + paras);
+			System.out.println("hourly query start : " + start + " end : " + end +  " paras : " + paras);
 			String key = words[0];
 			String value = words[1];
 			Query<Entity> query = null;
 			if(key.equals("device")) {
 				query = Query.newGqlQueryBuilder(
-						ResultType.ENTITY, "select * from HourlySummary where device_id = @1 and start >= @2").setAllowLiteral(true).
-						addBinding(value).addBinding(start).build();
+						ResultType.ENTITY, "select * from HourlySummary where device_id = @1 and start >= @2 and start <= @3" ).setAllowLiteral(true).
+						addBinding(value).addBinding(start).addBinding(end).build();
 			} else if(key.equals("event")) {
 				query = Query.newGqlQueryBuilder(
-						ResultType.ENTITY, "select * from HourlySummary where event = @1 and start >= @2").setAllowLiteral(true).
-						addBinding(value).addBinding(start).build();
+						ResultType.ENTITY, "select * from HourlySummary where event = @1 and start >= @2 and start <= @3").setAllowLiteral(true).
+						addBinding(value).addBinding(start).addBinding(end).build();
+			} else {
+				response.status(500);
+				return "cannot recongnize parameter : " + key;
 			}
 			QueryResults<Entity> results = datastore.run(query);
 			Gson gson = new Gson();
@@ -89,7 +93,7 @@ public class MainService {
 			String end = request.params(":end");
 			String paras = request.params(":paras");
 			String[] words = paras.split("=");
-			System.out.println("start : " + start + " end : " + end + " paras : " + paras);
+			System.out.println("raw query start : " + start + " end : " + end + " paras : " + paras);
 			String key = words[0];
 			String value = words[1];
 			Query<Entity> query = null;

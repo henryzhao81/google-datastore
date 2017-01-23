@@ -37,6 +37,7 @@ public class CredentialTest {
 	private final Datastore datastore = DatastoreOptions.defaultInstance().service();
 	// Create a Key factory to construct keys associated with this project.
 	private final KeyFactory keyFactory = datastore.newKeyFactory().kind("MetaData");
+	private final KeyFactory statusFactory = datastore.newKeyFactory().kind("Status");
 	
 	public static void main(String[] args) throws Exception {
 		CredentialTest test = new CredentialTest();
@@ -49,8 +50,10 @@ public class CredentialTest {
 			+ " event : " + each.getString("event") 
 			+ " published_at : " + each.getString("published_at"));
 		}*/
-		String start = "2017-01-20T22:00:00.000Z";
-		String end =   "2017-01-22T00:00:00.000Z";
+		//test.testInsert2();
+		//System.out.println(test.getLastHour("2017-12-21T23:29:10.090Z"));
+		String start = "2017-01-22T22:00:00.000Z";
+		String end =   "2017-01-23T02:00:00.000Z";
 		while(true) {
 			String next = test.getNextHour(start);
 			System.out.println("start : " + start + " next : " + next);
@@ -61,8 +64,7 @@ public class CredentialTest {
 			test.calSummary(start, next);
 			start = next;
 		}
-		//String end = "2017-02-10T00:00:00.000Z";
-		//test.getSummary(start, end);
+		//test.calSummary(start, end);
 	}
 	
 	String getNextHour(String start) throws ParseException {
@@ -74,7 +76,14 @@ public class CredentialTest {
 	    return formatter.format(calendar.getTime());
 	}
 	
-	boolean isSmaller(String start, String end) throws ParseException {
+	/**
+	 * if start is older than end
+	 * @param start
+	 * @param end
+	 * @return
+	 * @throws ParseException
+	 */
+	boolean isOlder(String start, String end) throws ParseException {
 		DateFormat formatter = new SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss.SSS'Z'");
 	    Date date1 = formatter.parse(start);
 	    Date date2 = formatter.parse(end);
@@ -126,6 +135,11 @@ public class CredentialTest {
         return results;
 	}
 	
+	void testInsert2() {
+		FullEntity task = Entity.newBuilder(statusFactory.newKey()).set("device_id", "330021000d47343432313031").set("last_finished", "2017-01-20T22:00:00.000Z").build();
+		datastore.add(task);
+	}
+	
 	void testInsert() {
 		FullEntity task = Entity.newBuilder(keyFactory.newKey()).
 				set("city", "san francisco").set("compost", "64").set("country", "US").set("cuisine", "Thai")
@@ -138,8 +152,9 @@ public class CredentialTest {
 	private final static String TYPE_COMPOST = "Compost";
 	private final static String TYPE_RECYCLE = "Recycle";
 	
-    void calSummary(String start, String end) {    	
+    void calSummary(String start, String end) throws ParseException {    	
     	Map<String, List<Pair>> map = this.getSummary(start, end);
+    	//this.filterLastHour(map);
     	if(map != null && map.size() > 0) {
     		Iterator<Map.Entry<String, List<Pair>>> keys = map.entrySet().iterator();
     		while(keys.hasNext()) {
@@ -186,21 +201,21 @@ public class CredentialTest {
     				Collections.sort(list_landfill);
     				double median = list_landfill.get(c_l / 2);
     				System.out.println("device id : " + strKey + " event : landfill " + " size : " + c_l + " avg : " + res + " start : " + start + " end : " + end + " median : " + median);
-    				//this.insertSummary(strKey, res, TYPE_LANDFILL, start, end, c_l, median);
+    				this.insertSummary(strKey, res, TYPE_LANDFILL, start, end, c_l, median);
     			}
     			if(c_c > 0) {
     				double res = total_compost.get() / c_c;
     				Collections.sort(list_compost);
     				double median = list_compost.get(c_c / 2);
     				System.out.println("device id : " + strKey + " event : compost " + " size : " + c_c + " avg : " + res + " start : " + start + " end : " + end + " median : " + median);
-    				//this.insertSummary(strKey, res, TYPE_COMPOST, start, end, c_c, median);
+    				this.insertSummary(strKey, res, TYPE_COMPOST, start, end, c_c, median);
     			}
     			if(c_r > 0) {
     				double res = total_recycle.get() / c_r;
     				Collections.sort(list_recycle);
     				double median = list_recycle.get(c_r / 2);
     				System.out.println("device id : " + strKey + " event : recycle " + " size : " + c_r + " avg : " + res + " start : " + start + " end : " + end + " median : " + median);
-    				//this.insertSummary(strKey, res, TYPE_RECYCLE, start, end, c_r, median);
+    				this.insertSummary(strKey, res, TYPE_RECYCLE, start, end, c_r, median);
     			}
     		}
     	}
@@ -216,10 +231,12 @@ public class CredentialTest {
     static class Pair {
     	String event;
     	Double value;
+    	String time;
     	
-    	public Pair(String event, Double value) {
+    	public Pair(String event, Double value, String time) {
     		this.event = event;
     		this.value = value;
+    		this.time = time;
     	}
     }
 	
@@ -227,7 +244,7 @@ public class CredentialTest {
 		System.out.println("start : " + start + " end : " + end);
 		Query<Entity> query =
 		        Query.newGqlQueryBuilder(
-		            ResultType.ENTITY, "select * from ParticleEvent where published_at < @1 and published_at > @2").setAllowLiteral(true).
+		            ResultType.ENTITY, "select * from ParticleEvent where published_at < @1 and published_at > @2 order by published_at").setAllowLiteral(true).
 		        addBinding(end).addBinding(start).build();
 		QueryResults<Entity> results = datastore.run(query);
 		Map<String, List<Pair>> map = new HashMap<String, List<Pair>>();
@@ -246,9 +263,10 @@ public class CredentialTest {
 				System.out.println("unrecognized data type : " + dataObj.toString());
 			}
 			String eventType = each.getString("event");
+			String published_at = each.getString("published_at");
 			Pair p = null;
 			if(dval != null) {
-				p = new Pair(eventType, dval);
+				p = new Pair(eventType, dval, published_at);
 			}
 			if(!map.containsKey(deviceId)) {
 				List<Pair> list = new ArrayList<Pair>();
@@ -262,6 +280,45 @@ public class CredentialTest {
 			}		
 		}
 		return map;		
+	}
+	
+	private Map<String, String> filterLastHour(Map<String, List<Pair>> results) throws ParseException {
+		Map<String, String> lmap = new HashMap<String, String>();
+		if(results != null && results.size() > 0) {
+			Iterator<Map.Entry<String, List<Pair>>> iter = results.entrySet().iterator();
+			while(iter.hasNext()) {
+				Map.Entry<String, List<Pair>> each = iter.next();
+    		    String strKey = each.getKey();
+    			List<Pair> vList = each.getValue();
+    			Pair lp = vList.get(vList.size() - 1);
+    			String lastHour = getLastHour(lp.time);
+    			Iterator<Pair> pIter = vList.iterator();
+    			while(pIter.hasNext()) {
+    				Pair ep = pIter.next();
+    				if(!this.isOlder(ep.time, lastHour)) {
+    					System.out.println("delete pair with " + ep.time + " which is equal or newer than last hour " + lastHour + " for device " + strKey);
+    					pIter.remove();
+    				}
+    			}
+    			lmap.put(strKey, lastHour);
+			}
+		}
+		return lmap;
+	}
+	
+	private String getLastHour(String lastTime) throws ParseException {
+		//format : 2017-01-21T01:29:10.090Z
+		DateFormat formatter = new SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss.SSS'Z'");
+	    Date date = formatter.parse(lastTime);
+	    Calendar calendar = Calendar.getInstance();
+	    calendar.setTime(date);
+	    String year = Integer.toString(calendar.get(Calendar.YEAR));
+	    int _month = calendar.get(Calendar.MONTH) + 1;
+	    String month = _month < 10 ? "0" + _month : Integer.toString(_month);	    	
+	    String day = calendar.get(Calendar.DAY_OF_MONTH) < 10 ? "0" + calendar.get(Calendar.DAY_OF_MONTH) : Integer.toString(calendar.get(Calendar.DAY_OF_MONTH));
+	    String hour = calendar.get(Calendar.HOUR_OF_DAY) < 10 ? "0" + calendar.get(Calendar.HOUR_OF_DAY) : Integer.toString(calendar.get(Calendar.HOUR_OF_DAY));
+	    String startTime = year+"-"+month+"-"+day+"T"+hour+":00:00.000Z";
+	    return startTime;
 	}
 
 }
